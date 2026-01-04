@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stopwatch</title>
+
+<style>
+body{
+  margin:0;
+  background:#000;
+  color:#fff;
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",sans-serif;
+  display:flex;
+  justify-content:center;
+  align-items:center;
+  height:100vh;
+}
+.app{width:320px;text-align:center}
+.time{font-size:64px;letter-spacing:2px}
+.buttons{
+  display:flex;
+  justify-content:space-between;
+  margin-top:30px;
+}
+button{
+  width:80px;height:80px;border-radius:50%;
+  border:none;font-size:16px;
+  background:#2c2c2e;color:#fff;
+}
+.start{background:#30d158;color:#000}
+.stop{background:#ff453a}
+.laps{
+  margin-top:20px;
+  max-height:150px;
+  overflow:auto;
+  font-size:14px;
+}
+.lap-item{
+  display:flex;
+  justify-content:space-between;
+  padding:4px 0;
+  border-bottom:1px solid #1c1c1e;
+}
+.popup{
+  position:fixed;bottom:0;left:0;right:0;
+  background:#1c1c1e;padding:16px;display:none;
+}
+.popup input{
+  width:100%;padding:10px;margin:8px 0;
+  background:#2c2c2e;border:none;color:#fff;font-size:18px;
+}
+.popup button{
+  width:100%;padding:12px;margin-top:10px;
+  background:#0a84ff;border:none;border-radius:10px;
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+  <div class="time" id="display">00:00.00</div>
+
+  <div class="buttons">
+    <button id="lapBtn">Lap</button>
+    <button id="startBtn" class="start">Start</button>
+  </div>
+
+  <div class="laps" id="laps"></div>
+</div>
+
+<div class="popup" id="popup">
+  <input id="forceInput" placeholder="Target number">
+  <input id="attemptInput" placeholder="Attempts">
+  <button onclick="saveConfig()">Save</button>
+</div>
+
+<script>
+/* ================= CORE STATE ================= */
+let running=false,startTime=0,raf;
+let stopAttempts=0,lapAttempts=0;
+let lapTimes=[];
+let forceUsed=false;
+
+/* persistent config */
+let forceNumber=parseInt(localStorage.getItem("forceNumber"))||78;
+let attemptTarget=parseInt(localStorage.getItem("attemptTarget"))||2;
+
+/* ================= TIME ================= */
+function format(ms){
+  let m=Math.floor(ms/60000);
+  let s=Math.floor((ms%60000)/1000);
+  let c=Math.floor((ms%1000)/10);
+  return `${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}.${String(c).padStart(2,"0")}`;
+}
+function tick(){
+  if(!running)return;
+  let now=performance.now()-startTime;
+  display.innerText=format(now);
+  raf=requestAnimationFrame(tick);
+}
+
+/* ================= START / STOP ================= */
+startBtn.onclick=()=>{
+  if(!running){
+    startTime=performance.now();
+    running=true;
+    startBtn.textContent="Stop";
+    startBtn.className="stop";
+    tick();
+  }else{
+    running=false;
+    cancelAnimationFrame(raf);
+    handleStop();
+    startBtn.textContent="Start";
+    startBtn.className="start";
+  }
+};
+
+function handleStop(){
+  stopAttempts++;
+  if(forceUsed) return;
+
+  if(stopAttempts===attemptTarget){
+    // PRE-ARMED LANDING (natural)
+    let sec=Math.floor(Math.random()*8)+1;
+    let cs=forceNumber-sec;
+    display.innerText=`00:${String(sec).padStart(2,"0")}.${String(cs).padStart(2,"0")}`;
+    forceUsed=true;
+  }
+}
+
+/* ================= LAP ================= */
+lapBtn.onclick=()=>{
+  if(!running){
+    // iOS reset behavior
+    resetVisible();
+    return;
+  }
+
+  let now=performance.now()-startTime;
+  let cs=Math.floor((now%1000)/10);
+  lapTimes.push(cs);
+  lapAttempts++;
+
+  renderLap(format(now));
+
+  if(!forceUsed && lapAttempts===attemptTarget){
+    let x=Math.floor(Math.random()*50)+10;
+    let y=forceNumber-x;
+    lapTimes[lapTimes.length-2]=x;
+    lapTimes[lapTimes.length-1]=y;
+
+    // overwrite visible lap values naturally
+    let items=document.querySelectorAll(".lap-item span:last-child");
+    items[items.length-2].innerText=`0.${String(x).padStart(2,"0")}`;
+    items[items.length-1].innerText=`0.${String(y).padStart(2,"0")}`;
+
+    forceUsed=true;
+  }
+};
+
+/* ================= RENDER LAPS ================= */
+function renderLap(t){
+  let d=document.createElement("div");
+  d.className="lap-item";
+  d.innerHTML=`<span>Lap ${lapTimes.length}</span><span>${t.split(":")[1]}</span>`;
+  laps.prepend(d);
+}
+
+/* ================= RESET ================= */
+function resetVisible(){
+  running=false;
+  cancelAnimationFrame(raf);
+  display.innerText="00:00.00";
+  laps.innerHTML="";
+  lapTimes=[];
+  stopAttempts=0;
+  lapAttempts=0;
+  forceUsed=false;
+}
+
+/* hidden reset */
+let lapHold;
+lapBtn.onmousedown=()=>lapHold=setTimeout(resetAll,2000);
+lapBtn.onmouseup=()=>clearTimeout(lapHold);
+function resetAll(){
+  stopAttempts=0;
+  lapAttempts=0;
+  forceUsed=false;
+}
+
+/* ================= SETUP POPUP ================= */
+let hold;
+display.onmousedown=()=>hold=setTimeout(()=>popup.style.display="block",1000);
+display.onmouseup=()=>clearTimeout(hold);
+
+function saveConfig(){
+  forceNumber=parseInt(forceInput.value);
+  attemptTarget=parseInt(attemptInput.value);
+  localStorage.setItem("forceNumber",forceNumber);
+  localStorage.setItem("attemptTarget",attemptTarget);
+  resetAll();
+  popup.style.display="none";
+}
+</script>
+
+</body>
+</html>
